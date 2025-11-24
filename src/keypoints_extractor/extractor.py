@@ -130,7 +130,7 @@ class HandSkeletonExtractor:
             return None
 
         x_min, y_min, x_max, y_max = bbox.get_ltrb()
-
+        # print("bbox detect in _get_keypoints_img:", bbox.get_ltrb())
         H, W, _ = frame.shape
 
         # 1) Tạo ảnh đen cùng size với frame
@@ -197,6 +197,10 @@ class HandSkeletonExtractor:
             - annotated_frame: frame có vẽ bbox + keypoints
             - keypoints_img: ảnh khung xương bàn tay
         """
+        _, bbox = self._extract_info(frame)
+        # print(
+        #     "bbox detect in process_frame:", None if bbox is None else bbox.get_ltrb()
+        # )
         keypoints_img = self._get_keypoints_img(frame)
         annotated_frame = self._get_annotated_frame(frame)
         if show_annotated:
@@ -226,13 +230,13 @@ class HandSkeletonExtractor:
             except Exception as e:
                 print(f"[ERROR] Failed to save {full_path}: {e}")
         if inference_mode:
-            annotated_frame = cv2.flip(cv2.resize(annotated_frame, (1280, 720)), 1)
-            frame_display = cv2.flip(cv2.resize(frame, (1280, 720)), 1)
-            bbox = self._get_hand_bbox(
-                frame_display,
-                # self._get_frame_landmark(frame_display),
-            )
-            print(bbox)
+            # annotated_frame = cv2.flip(cv2.resize(annotated_frame, (1280, 720)), 1)
+            # frame_display = cv2.flip(cv2.resize(frame, (1280, 720)), 1)
+            # bbox = self._get_hand_bbox(
+            #     frame_display,
+            #     # self._get_frame_landmark(frame_display),
+            # )
+            # print(bbox)
             return keypoints_img, annotated_frame, bbox
 
     def close(self):

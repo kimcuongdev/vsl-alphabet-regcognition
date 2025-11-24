@@ -7,6 +7,7 @@ from src.dataset.skeleton_dataset import CLASS_NAMES, NUM_CLASSES
 from src.inference.load_model import load_trained_resnet18
 from src.inference.predictor import predict_from_opencv_frame
 from src.keypoints_extractor.extractor import HandSkeletonExtractor
+from src.utils import draw_result
 
 
 def main():
@@ -37,20 +38,30 @@ def main():
             print("failed to capture frame")
             break
 
-        keypoints_img, annotated_frame, bbox = extractor.process_frame(
+        keypoints_img, _, _ = extractor.process_frame(
             frame,
             inference_mode=True,
             show_annotated=False,
             show_keypoints_image=True,
         )
-        if bbox is not None:
-            print(bbox.get_ltrb())
-        cv2.imshow("test", annotated_frame)
+
+        _, annotated_frame, bbox = extractor.process_frame(
+            cv2.flip(frame, 1),
+            inference_mode=True,
+            show_annotated=False,
+            show_keypoints_image=False,
+        )
+        # cv2.imshow("Annotated Frame", annotated_frame)
+        print(bbox.get_ltrb() if bbox is not None else None)
+
         pred_class, pred_conf = None, None
         if keypoints_img is not None:
             pred_class, pred_conf = predict_from_opencv_frame(
                 keypoints_img, model, device, CLASS_NAMES
             )
+            print(f"Predicted: {pred_class} ({pred_conf:.4f})")
+            annotated_frame = draw_result(annotated_frame, bbox, pred_class, pred_conf)
+        cv2.imshow("Result", annotated_frame)
 
         key = cv2.waitKey(1)
         if key == 27:  # ESC
