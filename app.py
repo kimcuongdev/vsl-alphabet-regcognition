@@ -22,11 +22,7 @@ def main():
     )
 
     # extractor phải tương đồng với extractor khi tạo dataset
-    extractor = HandSkeletonExtractor(
-        target_size=224,
-        margin=20,
-        channels=1,
-    )
+    extractor = HandSkeletonExtractor()
 
     cap = cv2.VideoCapture(0)
     if not cap.isOpened():
@@ -52,7 +48,7 @@ def main():
             show_keypoints_image=False,
         )
         # cv2.imshow("Annotated Frame", annotated_frame)
-        print(bbox.get_ltrb() if bbox is not None else None)
+        # print(bbox.get_ltrb() if bbox is not None else None)
 
         pred_class, pred_conf = None, None
         if keypoints_img is not None:

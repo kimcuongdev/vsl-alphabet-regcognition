@@ -32,11 +32,11 @@ class HandSkeletonExtractor:
         max_num_hands: int = 1,
         min_detection_confidence: float = 0.5,
         min_tracking_confidence: float = 0.5,
-        line_thickness: int = 3,  # độ dày của graph (line)
-        circle_radius: int = 3,  # bán kính của các điểm (node)
+        line_thickness: int = 2,  # độ dày của graph (line)
+        circle_radius: int = 5,  # bán kính của các điểm (node)
         line_color: tuple = (255, 255, 255),
         circle_color: tuple = (0, 0, 255),
-        channels: int = 3,
+        channels: int = 1,
     ):
         self.target_size = target_size
         self.margin = margin
@@ -101,8 +101,8 @@ class HandSkeletonExtractor:
 
         x_min = max(0, x_min - self.margin)
         y_min = max(0, y_min - self.margin)
-        x_max = min(w - 1, x_max + self.margin)
-        y_max = min(h - 1, y_max + self.margin)
+        x_max = min(w, x_max + self.margin)
+        y_max = min(h, y_max + self.margin)
 
         if x_max <= x_min or y_max <= y_min:
             return None
@@ -112,56 +112,44 @@ class HandSkeletonExtractor:
     def _extract_info(self, frame):
         hand_landmarks = self._get_frame_landmark(frame)
         bbox = self._get_hand_bbox(frame)
-        return hand_landmarks, bbox
+        return frame, hand_landmarks, bbox
 
     def _get_keypoints_img(self, frame):
         """
         Trả về ảnh khung xương của bàn tay trong frame
         (vẽ giống hệt annotated_img nhưng nền đen, resize về target_size x target_size)
         """
-        # hand_landmarks = self._get_frame_landmark(frame)
-        # if hand_landmarks is None:
-        #     print("No hand landmarks detected.")
-        #     return None
 
-        hand_landmarks, bbox = self._extract_info(frame)
+        frame, hand_landmarks, bbox = self._extract_info(frame)
+        H, W, _ = frame.shape
 
-        if bbox is None:
+        if bbox is None or hand_landmarks is None:
             return None
 
         x_min, y_min, x_max, y_max = bbox.get_ltrb()
-        # print("bbox detect in _get_keypoints_img:", bbox.get_ltrb())
-        H, W, _ = frame.shape
+        crop_h, crop_w = (y_max - y_min), (x_max - x_min)
+        canvas = np.zeros((self.target_size, self.target_size, 3), dtype=np.uint8)
+        points = []
+        for lm in hand_landmarks.landmark:
+            abs_x = lm.x * W
+            abs_y = lm.y * H
+            rel_x = (abs_x - x_min) / crop_w * self.target_size
+            rel_y = (abs_y - y_min) / crop_h * self.target_size
+            points.append((int(rel_x), int(rel_y)))
 
-        # 1) Tạo ảnh đen cùng size với frame
-        black = np.zeros((H, W, 3), dtype=np.uint8)
+        for conn in self.mp_hands.HAND_CONNECTIONS:
+            start_idx, end_idx = conn
+            x1, y1 = points[start_idx]
+            x2, y2 = points[end_idx]
+            cv2.line(canvas, (x1, y1), (x2, y2), self.line_color, self.line_thickness)
 
-        # 2) Vẽ landmarks + connections lên ảnh đen
-        self.mp_drawing.draw_landmarks(
-            black,
-            hand_landmarks,
-            self.mp_hands.HAND_CONNECTIONS,
-            self.drawing_spec_landmark,
-            self.drawing_spec_connection,
-        )
+        for cx, cy in points:
+            cv2.circle(canvas, (cx, cy), self.circle_radius, self.circle_color, -1)
 
-        # 3) Cắt vùng bàn tay (bbox) từ ảnh đen
-        hand_crop = black[y_min:y_max, x_min:x_max]
-        ch, cw, _ = hand_crop.shape
-
-        # 4) Pad cho vuông giống code cũ
-        side = max(ch, cw)
-        canvas = np.zeros((side, side, 3), dtype=np.uint8)
-
-        y_offset = (side - ch) // 2
-        x_offset = (side - cw) // 2
-        canvas[y_offset : y_offset + ch, x_offset : x_offset + cw] = hand_crop
-
-        # 5) Resize về kích thước mong muốn
-        canvas = cv2.resize(canvas, (self.target_size, self.target_size))
         if self.channels == 1:
             canvas = cv2.cvtColor(canvas, cv2.COLOR_BGR2GRAY)
             canvas = np.expand_dims(canvas, axis=-1)
+
         return canvas
 
     def _get_annotated_frame(self, frame):
@@ -197,7 +185,7 @@ class HandSkeletonExtractor:
             - annotated_frame: frame có vẽ bbox + keypoints
             - keypoints_img: ảnh khung xương bàn tay
         """
-        _, bbox = self._extract_info(frame)
+        _, _, bbox = self._extract_info(frame)
         # print(
         #     "bbox detect in process_frame:", None if bbox is None else bbox.get_ltrb()
         # )
@@ -241,112 +229,3 @@ class HandSkeletonExtractor:
 
     def close(self):
         self.hands.close()
-
-
-def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--channels",
-        type=int,
-        default=1,
-        help="1 = grayscale, 3 = rgb",
-    )
-    parser.add_argument(
-        "--output",
-        type=int,
-        default=224,
-        help="kích thước cạnh ảnh output (square), ví dụ 224",
-    )
-    args = parser.parse_args()
-
-    channels = args.channels
-    target_size = args.output
-
-    # map channels -> scale folder
-    scale = "grayscale" if channels == 1 else "rgb"
-
-    video_paths = [
-        r"data\raw_video\A.mp4",
-        r"data\raw_video\B.mp4",
-        r"data\raw_video\C.mp4",
-        r"data\raw_video\D.mp4",
-        r"data\raw_video\Đ.mp4",
-        r"data\raw_video\E.mp4",
-        r"data\raw_video\G.mp4",
-        r"data\raw_video\H.mp4",
-        r"data\raw_video\I.mp4",
-        r"data\raw_video\K.mp4",
-        r"data\raw_video\L.mp4",
-        r"data\raw_video\M.mp4",
-        r"data\raw_video\mũ.mp4",
-        r"data\raw_video\N.mp4",
-        r"data\raw_video\O.mp4",
-        r"data\raw_video\P.mp4",
-        r"data\raw_video\Q.mp4",
-        r"data\raw_video\R.mp4",
-        r"data\raw_video\Râu.mp4",
-        r"data\raw_video\S.mp4",
-        r"data\raw_video\T.mp4",
-        r"data\raw_video\U.mp4",
-        r"data\raw_video\V.mp4",
-        r"data\raw_video\X.mp4",
-        r"data\raw_video\Y.mp4",
-    ]
-
-    for video_path in video_paths:
-        video_path = Path(video_path)
-        VIDEO_PATH = str(video_path)
-
-        # label = tên file video không gồm đuôi, ví dụ A, Đ, mũ...
-        label = video_path.stem
-
-        # data/keypoint_img/{scale}/{output_size}/{label}
-        SAVE_PATH = Path("data") / "keypoint_img" / scale / str(target_size) / label
-        SAVE_PATH.mkdir(parents=True, exist_ok=True)
-
-        cap = cv2.VideoCapture(VIDEO_PATH)
-        if not cap.isOpened():
-            print(f"Không mở được video: {VIDEO_PATH}, bỏ qua.")
-            continue
-
-        extractor = HandSkeletonExtractor(
-            target_size=target_size,
-            margin=20,
-            line_thickness=3,
-            circle_radius=3,
-            channels=channels,
-        )
-
-        frame_idx = 0
-        video_title = video_path.stem  # dùng làm prefix khi lưu ảnh
-
-        while True:
-            ret, frame = cap.read()
-            if not ret:
-                print(f"Hết video: {VIDEO_PATH}")
-                break
-
-            frame_idx += 1
-
-            extractor.process_frame(
-                frame=frame,
-                frame_idx=frame_idx,
-                show_annotated=True,
-                show_keypoints_image=True,
-                save=True,
-                save_path=str(SAVE_PATH),
-                save_name=video_title,  # ví dụ A_frame_001.jpeg
-            )
-
-            # Nhấn 'q' để thoát sớm
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-
-        cap.release()
-        extractor.close()
-
-    cv2.destroyAllWindows()
-
-
-if __name__ == "__main__":
-    main()
